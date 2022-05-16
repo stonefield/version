@@ -6,10 +6,10 @@ require 'pathname'
 class Rake::VersionTask < Rake::TaskLib
   attr_accessor :filename
   attr_writer   :filetype
-  
+
   # when true, commits version bumps automatically (default: autodetect)
   attr_accessor :with_git
-  
+
   # when true, tags version bumps automatically (default: false)
   attr_accessor :with_git_tag
 
@@ -27,13 +27,16 @@ class Rake::VersionTask < Rake::TaskLib
   # copying the current svn URL to the '<base>/tags/<version>'
   # (default: false)
   attr_accessor :with_svn_tag
-  
+
   # when set with a Gem::Specification, automatically emits an updated
   # gemspec on version bumps
   attr_accessor :with_gemspec
 
   # when set allows to override commit message
   attr_accessor :with_commit_message
+
+  # when set to true, will require a commit message
+  attr_accessor :force_commit_message
 
   #
   # Creates a new VersionTask with the given +filename+. Attempts to
@@ -44,12 +47,12 @@ class Rake::VersionTask < Rake::TaskLib
     self.with_git = File.exist?('.git')
     self.with_hg = File.exist?('.hg')
     self.with_svn = File.exist?('.svn')
-    
+
     yield(self) if block_given?
-    
+
     self.define
   end
-  
+
   #
   # The +filetype+ of the file to be generated. Is determined automatically
   # if not set.
@@ -57,76 +60,95 @@ class Rake::VersionTask < Rake::TaskLib
   def filetype
     @filetype || self.path.extname[1..-1]
   end
-  
+
   def gemspec
     Pathname("#{with_gemspec.name}.gemspec") if with_gemspec
   end
-  
+
   protected
-  
+
   #
   # The path for the +filename+.
   #
   def path
     Pathname.new(self.filename)
   end
-  
+
+  def task(*args)
+    definition = args[0]
+    if self.force_commit_message && definition.is_a?(Hash) && definition.first[0] != :version
+      task_name = definition.first[0]
+      dependencies = definition.first[1]
+      super(task_name, [:commit_message] => dependencies) do |task, args|
+        puts "Executing task: #{task}, with #{args[:commit_message].inspect}"
+        unless message = args[:commit_message]
+          abort "You must specify a commit message in brackets, like this: \n\t rake #{task}['commit message']"
+        else
+          self.with_commit_message = message
+          yield
+        end
+      end
+    else
+      super
+    end
+  end
+
   #
   # Defines the rake tasks.
   #
   def define
     fail 'Filename required' if self.filename.nil?
-    
+
     file filename
-    
+
     desc "Print the current version number (#{read})"
     task(:version => filename) { puts read }
-    
+
     namespace :version do
       desc 'Creates a version file with an optional VERSION parameter'
       task(:create) do
         version = (ENV['VERSION'] || '0.0.0').to_version
         puts write(version)
       end
-      
+
       desc "Bump to #{read.bump!}"
       task(:bump => filename) { puts write(read.bump!) }
-      
+
       namespace :bump do
         desc "Bump to #{read.bump!(:major)}"
         task(:major => filename) { puts write(read.bump!(:major)) }
-        
+
         desc "Bump to #{read.bump!(:minor)}"
         task(:minor => filename) { puts write(read.bump!(:minor)) }
-        
+
         desc "Bump to #{read.bump!(:revision)}"
         task(:revision => filename) { puts write(read.bump!(:revision)) }
-        
+
         desc "Bump to #{read.bump!(:pre)}"
         task(:pre => filename) { puts write(read.bump!(:pre)) }
-        
+
         namespace :pre do
           desc "Bump to #{read.bump!(:major, true)}"
           task(:major => filename) { puts write(read.bump!(:major, true)) }
-          
+
           desc "Bump to #{read.bump!(:minor, true)}"
           task(:minor => filename) { puts write(read.bump!(:minor, true)) }
-          
+
           desc "Bump to #{read.bump!(:revision, true)}"
           task(:revision => filename) { puts write(read.bump!(:revision, true)) }
         end
       end
     end
   end
-  
+
   private
-  
+
   #
   # Returns the Version contained in the file at +filename+.
   #
   def read
     contents = path.read rescue '0.0.0'
-    
+
     case filetype.to_s
       when ''    then contents.chomp.to_version
       when 'yml' then YAML::load(contents).to_version
@@ -140,6 +162,7 @@ class Rake::VersionTask < Rake::TaskLib
   # Writes out +version+ to the file at +filename+ with the correct format.
   #
   def write(version)
+    puts "version: #{version} read: #{read}"
     return if version == read
 
     path.open('w') do |io|
@@ -190,7 +213,7 @@ class Rake::VersionTask < Rake::TaskLib
         end
       end
     end
-    
+
     version
   end
 end

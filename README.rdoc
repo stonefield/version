@@ -65,6 +65,16 @@ you, too.
     task.with_git_tag = true
   end
 
+If you want to enforce a commit message with the version tag, you can do so by adding `force_commit_message` like this:
+
+  Rake::VersionTask.new do |task|
+    task.force_commit_message = true
+  end
+
+Then you is required to add a message parameter, like
+
+	rails version:bump['This is the commit message']
+
 And if you want the VersionTask to automatically emit updated gemspecs on
 version-bumps, use the +with_gemspec+ flag.
 
